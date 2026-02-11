@@ -26,6 +26,18 @@ impl UdpTransport {
         self.socket.set_read_timeout(timeout)?;
         Ok(())
     }
+
+    pub fn send_to(
+        &mut self,
+        packet: &[u8],
+        remote_addr: SocketAddr,
+    ) -> Result<usize, TransportError> {
+        Ok(self.socket.send_to(packet, remote_addr)?)
+    }
+
+    pub fn receive_from(&mut self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), TransportError> {
+        Ok(self.socket.recv_from(buffer)?)
+    }
 }
 
 impl PacketSender for UdpTransport {

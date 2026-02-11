@@ -49,7 +49,7 @@ fn run_healthcheck(config: HealthcheckConfig) -> Result<(), Box<dyn std::error::
 fn run_listener(mut transport: UdpTransport) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = [0_u8; 64];
     loop {
-        let bytes_received = transport.receive(&mut buffer)?;
+        let (bytes_received, source_address) = transport.receive_from(&mut buffer)?;
         let packet = match HealthcheckPacket::decode(&buffer[..bytes_received]) {
             Ok(packet) => packet,
             Err(_) => continue,
@@ -60,7 +60,7 @@ fn run_listener(mut transport: UdpTransport) -> Result<(), Box<dyn std::error::E
                 kind: HealthcheckKind::Pong,
                 timestamp_nanos: packet.timestamp_nanos,
             };
-            transport.send(&response.encode())?;
+            transport.send_to(&response.encode(), source_address)?;
         }
     }
 }
