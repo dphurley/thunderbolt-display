@@ -2,8 +2,11 @@ use shared::core::packet_codec::decode_packet;
 use shared::core::reassembler::{FrameReassembler, ReassemblyError};
 use shared::transport::udp::UdpTransport;
 use shared::transport::PacketReceiver;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
+
+#[cfg(target_os = "macos")]
+use shared::platform::macos::network::detect_preferred_interface;
 
 #[derive(Debug)]
 struct ClientConfig {
@@ -79,6 +82,7 @@ fn parse_args() -> Result<ClientConfig, String> {
     let mut remote_address: Option<SocketAddr> = None;
     let mut max_packet_bytes: usize = 2048;
     let mut max_in_flight_frames: usize = 8;
+    let mut auto_bind_port: Option<u16> = None;
 
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -103,6 +107,10 @@ fn parse_args() -> Result<ClientConfig, String> {
                     .parse()
                     .map_err(|_| "invalid max in flight frames")?;
             }
+            "--auto-bind-port" => {
+                let value = args.next().ok_or("missing --auto-bind-port value")?;
+                auto_bind_port = Some(value.parse().map_err(|_| "invalid port")?);
+            }
             "--help" | "-h" => {
                 return Err("".to_string());
             }
@@ -112,7 +120,13 @@ fn parse_args() -> Result<ClientConfig, String> {
         }
     }
 
-    let bind_address = bind_address.ok_or("missing --bind")?;
+    if bind_address.is_none() {
+        if let Some(port) = auto_bind_port {
+            bind_address = auto_bind_socket(port)?;
+        }
+    }
+
+    let bind_address = bind_address.ok_or("missing --bind (or use --auto-bind-port)")?;
     let remote_address = remote_address.ok_or("missing --remote")?;
 
     Ok(ClientConfig {
@@ -123,6 +137,25 @@ fn parse_args() -> Result<ClientConfig, String> {
     })
 }
 
+fn auto_bind_socket(port: u16) -> Result<Option<SocketAddr>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(interface) = detect_preferred_interface() {
+            eprintln!(
+                "auto-bind selected interface {} with IPv4 {}",
+                interface.name, interface.ipv4
+            );
+            return Ok(Some(SocketAddr::new(
+                IpAddr::V4(interface.ipv4),
+                port,
+            )));
+        }
+    }
+
+    let fallback = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+    Ok(Some(fallback))
+}
+
 fn parse_socket_addr(value: &str) -> Result<SocketAddr, String> {
     value
         .parse()
@@ -131,6 +164,6 @@ fn parse_socket_addr(value: &str) -> Result<SocketAddr, String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: client --bind IP:PORT --remote IP:PORT [--max-packet-bytes N] [--max-in-flight-frames N]"
+        "usage: client --bind IP:PORT --remote IP:PORT [--max-packet-bytes N] [--max-in-flight-frames N] [--auto-bind-port PORT]"
     );
 }

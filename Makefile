@@ -8,7 +8,7 @@ FRAME_INTERVAL_MS ?= 16
 MAX_PACKET_BYTES ?= 2048
 MAX_IN_FLIGHT_FRAMES ?= 8
 
-.PHONY: test host client help
+.PHONY: test host client host-auto client-auto help
 
 help:
 	@echo "Targets:"
@@ -30,6 +30,21 @@ host:
 client:
 	cargo run -p client -- \
 		--bind $(CLIENT_BIND) \
+		--remote $(CLIENT_REMOTE) \
+		--max-packet-bytes $(MAX_PACKET_BYTES) \
+		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES)
+
+host-auto:
+	cargo run -p host -- \
+		--auto-bind-port 5001 \
+		--remote $(HOST_REMOTE) \
+		--payload-bytes $(PAYLOAD_BYTES) \
+		--max-payload-bytes $(MAX_PAYLOAD_BYTES) \
+		--frame-interval-ms $(FRAME_INTERVAL_MS)
+
+client-auto:
+	cargo run -p client -- \
+		--auto-bind-port 5000 \
 		--remote $(CLIENT_REMOTE) \
 		--max-packet-bytes $(MAX_PACKET_BYTES) \
 		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES)
