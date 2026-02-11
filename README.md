@@ -54,3 +54,7 @@ A minimal, low-latency mac-to-mac extended display prototype with a wired Thunde
    - Run `cargo run -p host -- --bind 0.0.0.0:5001 --remote <CLIENT_IP>:5000`
 
 You should see frame/packet counters print once per second on both ends.
+
+## Makefile shortcuts
+- `make client CLIENT_REMOTE=<HOST_IP>:5001`
+- `make host HOST_REMOTE=<CLIENT_IP>:5000`
