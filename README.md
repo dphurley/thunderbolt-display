@@ -94,3 +94,13 @@ To remove the frame pacing ceiling, set `NO_SLEEP=1` on the host:
 ```bash
 make host CODEC=h264 NO_SLEEP=1 WIDTH=320 HEIGHT=180 BITRATE=3000000 HOST_REMOTE=<CLIENT_IP>:5000
 ```
+
+## Virtual display (extended desktop)
+This creates a virtual display on the host so macOS treats it as an extra monitor (not mirroring).
+**Note:** This uses private CoreGraphics interfaces and is for local testing only.
+
+```bash
+cargo run -p virtual-display -- --width 1920 --height 1080 --ppi 110 --name \"Virtual Thunderbolt\"
+```
+
+Keep this running while you stream/capture the new display.

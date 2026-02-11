@@ -2,5 +2,5 @@
 resolver = "2"
 members = [
   "host",
-  "client", "shared", "healthcheck",
+  "client", "shared", "healthcheck", "virtual-display",
 ]
