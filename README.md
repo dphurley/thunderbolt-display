@@ -87,3 +87,10 @@ Run a lightweight UDP ping/pong to confirm reachability before starting the stre
    - `make host CODEC=h264 HOST_REMOTE=<CLIENT_IP>:5000`
 
 Adjust `WIDTH`, `HEIGHT`, and `BITRATE` as needed.
+
+## Max FPS test
+To remove the frame pacing ceiling, set `NO_SLEEP=1` on the host:
+
+```bash
+make host CODEC=h264 NO_SLEEP=1 WIDTH=320 HEIGHT=180 BITRATE=3000000 HOST_REMOTE=<CLIENT_IP>:5000
+```

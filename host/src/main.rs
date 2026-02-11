@@ -26,6 +26,7 @@ struct HostConfig {
     payload_bytes: usize,
     max_payload_bytes: usize,
     frame_interval: Duration,
+    no_sleep: bool,
     codec: CodecChoice,
     width: u32,
     height: u32,
@@ -87,7 +88,9 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
                 frames_sent += 1;
                 frame_identifier = frame_identifier.wrapping_add(1);
                 report(&mut last_report, &mut frames_sent);
-                std::thread::sleep(config.frame_interval);
+                if !config.no_sleep {
+                    std::thread::sleep(config.frame_interval);
+                }
             }
         }
         CodecChoice::H264 => {
@@ -125,7 +128,9 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
                     frames_sent += 1;
                     frame_identifier = frame_identifier.wrapping_add(1);
                     report(&mut last_report, &mut frames_sent);
-                    std::thread::sleep(config.frame_interval);
+                    if !config.no_sleep {
+                        std::thread::sleep(config.frame_interval);
+                    }
                 }
             }
             #[cfg(not(target_os = "macos"))]
@@ -184,6 +189,7 @@ fn parse_args() -> Result<HostConfig, String> {
     let mut width: u32 = 320;
     let mut height: u32 = 180;
     let mut bitrate: u32 = 3_000_000;
+    let mut no_sleep = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -231,6 +237,9 @@ fn parse_args() -> Result<HostConfig, String> {
                 let value = args.next().ok_or("missing --bitrate value")?;
                 bitrate = value.parse().map_err(|_| "invalid bitrate")?;
             }
+            "--no-sleep" => {
+                no_sleep = true;
+            }
             "--help" | "-h" => {
                 return Err("".to_string());
             }
@@ -255,6 +264,7 @@ fn parse_args() -> Result<HostConfig, String> {
         payload_bytes,
         max_payload_bytes,
         frame_interval,
+        no_sleep,
         codec,
         width,
         height,
@@ -297,6 +307,6 @@ fn parse_socket_addr(value: &str) -> Result<SocketAddr, String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: host --bind IP:PORT --remote IP:PORT [--payload-bytes N] [--max-payload-bytes N] [--frame-interval-ms N] [--auto-bind-port PORT] [--codec passthrough|h264] [--width N --height N --bitrate N]"
+        "usage: host --bind IP:PORT --remote IP:PORT [--payload-bytes N] [--max-payload-bytes N] [--frame-interval-ms N] [--auto-bind-port PORT] [--codec passthrough|h264] [--width N --height N --bitrate N] [--no-sleep]"
     );
 }

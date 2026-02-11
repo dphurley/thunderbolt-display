@@ -5,6 +5,7 @@ CLIENT_REMOTE ?= 192.168.0.1:5001
 PAYLOAD_BYTES ?= 65536
 MAX_PAYLOAD_BYTES ?= 1200
 FRAME_INTERVAL_MS ?= 16
+NO_SLEEP ?= 0
 MAX_PACKET_BYTES ?= 2048
 MAX_IN_FLIGHT_FRAMES ?= 8
 CODEC ?= passthrough
@@ -36,7 +37,8 @@ host:
 		--codec $(CODEC) \
 		--width $(WIDTH) \
 		--height $(HEIGHT) \
-		--bitrate $(BITRATE)
+		--bitrate $(BITRATE) \
+		$(if $(filter 1,$(NO_SLEEP)),--no-sleep,)
 
 client:
 	cargo run -p client -- \
@@ -56,7 +58,8 @@ host-auto:
 		--codec $(CODEC) \
 		--width $(WIDTH) \
 		--height $(HEIGHT) \
-		--bitrate $(BITRATE)
+		--bitrate $(BITRATE) \
+		$(if $(filter 1,$(NO_SLEEP)),--no-sleep,)
 
 client-auto:
 	cargo run -p client -- \
