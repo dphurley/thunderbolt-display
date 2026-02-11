@@ -1,5 +1,7 @@
 pub mod types;
 pub mod dummy;
+#[cfg(target_os = "macos")]
+pub mod macos;
 
 use types::{DecodedFrame, EncodedFrame, RawFrame};
 
