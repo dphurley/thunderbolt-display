@@ -5,6 +5,8 @@ fn main() {
         println!("cargo:rerun-if-changed=src/codec/macos/vtbridge/vtbridge.h");
         println!("cargo:rerun-if-changed=src/platform/macos/virtual_display/virtual_display.m");
         println!("cargo:rerun-if-changed=src/platform/macos/virtual_display/virtual_display.h");
+        println!("cargo:rerun-if-changed=src/platform/macos/display_info/display_info.m");
+        println!("cargo:rerun-if-changed=src/platform/macos/display_info/display_info.h");
 
         cc::Build::new()
             .file("src/codec/macos/vtbridge/vtbridge.m")
@@ -15,6 +17,11 @@ fn main() {
             .file("src/platform/macos/virtual_display/virtual_display.m")
             .flag("-fobjc-arc")
             .compile("virtual_display");
+
+        cc::Build::new()
+            .file("src/platform/macos/display_info/display_info.m")
+            .flag("-fobjc-arc")
+            .compile("display_info");
 
         println!("cargo:rustc-link-lib=framework=VideoToolbox");
         println!("cargo:rustc-link-lib=framework=CoreMedia");

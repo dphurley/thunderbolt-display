@@ -104,3 +104,10 @@ cargo run -p virtual-display -- --width 1920 --height 1080 --ppi 110 --name \"Vi
 ```
 
 Keep this running while you stream/capture the new display.
+
+## Display list
+List display IDs and sizes (useful for selecting capture targets):
+
+```bash
+cargo run -p display-info
+```
