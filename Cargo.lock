@@ -10,6 +10,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "healthcheck"
+version = "0.1.0"
+dependencies = [
+ "shared",
+]
+
+[[package]]
 name = "host"
 version = "0.1.0"
 dependencies = [

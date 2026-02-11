@@ -60,6 +60,8 @@ You should see frame/packet counters print once per second on both ends.
 - `make host HOST_REMOTE=<CLIENT_IP>:5000`
 - `make client-auto CLIENT_REMOTE=<HOST_IP>:5001` (auto-pick local interface, prefer Thunderbolt Bridge)
 - `make host-auto HOST_REMOTE=<CLIENT_IP>:5000` (auto-pick local interface, prefer Thunderbolt Bridge)
+- `make healthcheck-listen HC_BIND=0.0.0.0:7000`
+- `make healthcheck-ping HC_BIND=0.0.0.0:7001 HC_REMOTE=<PEER_IP>:7000`
 
 ## Interface auto-detection
 On macOS, `--auto-bind-port` will select the best active IPv4 interface, preferring:\n
@@ -67,3 +69,11 @@ On macOS, `--auto-bind-port` will select the best active IPv4 interface, preferr
 2. `en*` with a `169.254.x.x` link-local IPv4\n
 3. Any active IPv4 interface\n
 The selected interface is printed to stderr so you can confirm what was chosen.
+
+## Healthcheck ping
+Run a lightweight UDP ping/pong to confirm reachability before starting the stream.
+
+1. On the peer you want to answer pings:
+   - `make healthcheck-listen HC_BIND=0.0.0.0:7000`
+2. On the local machine:
+   - `make healthcheck-ping HC_BIND=0.0.0.0:7001 HC_REMOTE=<PEER_IP>:7000`
