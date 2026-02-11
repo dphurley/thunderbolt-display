@@ -1,3 +1,5 @@
+use shared::codec::dummy::PassthroughCodec;
+use shared::codec::VideoDecoder;
 use shared::core::packet_codec::decode_packet;
 use shared::core::reassembler::{FrameReassembler, ReassemblyError};
 use shared::transport::udp::UdpTransport;
@@ -39,6 +41,7 @@ fn run_client(config: ClientConfig) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut reassembler = FrameReassembler::new(config.max_in_flight_frames);
     let mut buffer = vec![0_u8; config.max_packet_bytes];
+    let mut decoder = PassthroughCodec::default();
 
     let mut last_report = Instant::now();
     let mut frames_received: u64 = 0;
@@ -55,7 +58,12 @@ fn run_client(config: ClientConfig) -> Result<(), Box<dyn std::error::Error>> {
 
                 match reassembler.push_packet(packet) {
                     Ok(Some(frame)) => {
-                        let _ = frame;
+                        let encoded = shared::codec::types::EncodedFrame {
+                            timestamp: Duration::from_nanos(frame.timestamp_nanos),
+                            data: frame.payload,
+                            is_keyframe: true,
+                        };
+                        let _ = decoder.decode(&encoded);
                         frames_received += 1;
                     }
                     Ok(None) => {}

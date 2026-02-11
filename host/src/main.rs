@@ -1,3 +1,6 @@
+use shared::codec::dummy::PassthroughCodec;
+use shared::codec::types::{PixelFormat, RawFrame};
+use shared::codec::VideoEncoder;
 use shared::core::packet_codec::encode_packet;
 use shared::core::packetizer::{Packetizer, PacketizerConfig};
 use shared::core::sequence::SequenceNumber;
@@ -38,6 +41,7 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
     let transport = UdpTransport::bind(config.bind_address)?.connect(config.remote_address)?;
     let mut sender = transport;
 
+    let mut encoder = PassthroughCodec::default();
     let mut packetizer = Packetizer::new(
         PacketizerConfig {
             max_payload_bytes: config.max_payload_bytes,
@@ -50,8 +54,17 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
     let mut frames_sent: u64 = 0;
 
     loop {
-        let payload = vec![0xAB; config.payload_bytes];
         let timestamp_nanos = current_time_nanos();
+        let raw_frame = RawFrame {
+            width: 1,
+            height: 1,
+            pixel_format: PixelFormat::Rgba8,
+            timestamp: Duration::from_nanos(timestamp_nanos),
+            data: vec![0xAB; config.payload_bytes],
+        };
+
+        let encoded = encoder.encode(&raw_frame)?;
+        let payload = encoded.data;
 
         let packets = packetizer.packetize(frame_identifier, timestamp_nanos, &payload)?;
         for packet in packets {
