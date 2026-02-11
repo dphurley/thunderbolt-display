@@ -5,7 +5,6 @@ use shared::core::packet_codec::encode_packet;
 use shared::core::packetizer::{Packetizer, PacketizerConfig};
 use shared::core::sequence::SequenceNumber;
 use shared::transport::udp::UdpTransport;
-use shared::transport::PacketSender;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
@@ -50,9 +49,7 @@ fn main() {
 }
 
 fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let transport = UdpTransport::bind(config.bind_address)?.connect(config.remote_address)?;
-    let mut sender = transport;
-
+    let mut sender = UdpTransport::bind(config.bind_address)?;
     let mut packetizer = Packetizer::new(
         PacketizerConfig {
             max_payload_bytes: config.max_payload_bytes,
@@ -80,6 +77,7 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
                 let encoded = encoder.encode(&raw_frame)?;
                 send_encoded(
                     &mut sender,
+                    config.remote_address,
                     &mut packetizer,
                     frame_identifier,
                     timestamp_nanos,
@@ -117,6 +115,7 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
                     let encoded = encoder.encode(&raw_frame)?;
                     send_encoded(
                         &mut sender,
+                        config.remote_address,
                         &mut packetizer,
                         frame_identifier,
                         timestamp_nanos,
@@ -139,6 +138,7 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
 
 fn send_encoded(
     sender: &mut UdpTransport,
+    remote_address: SocketAddr,
     packetizer: &mut Packetizer,
     frame_identifier: u32,
     timestamp_nanos: u64,
@@ -147,7 +147,7 @@ fn send_encoded(
     let packets = packetizer.packetize(frame_identifier, timestamp_nanos, payload)?;
     for packet in packets {
         let buffer = encode_packet(&packet);
-        sender.send(&buffer)?;
+        sender.send_to(&buffer, remote_address)?;
     }
     Ok(())
 }
