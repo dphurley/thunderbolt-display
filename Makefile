@@ -7,6 +7,10 @@ MAX_PAYLOAD_BYTES ?= 1200
 FRAME_INTERVAL_MS ?= 16
 MAX_PACKET_BYTES ?= 2048
 MAX_IN_FLIGHT_FRAMES ?= 8
+CODEC ?= passthrough
+WIDTH ?= 320
+HEIGHT ?= 180
+BITRATE ?= 3000000
 
 .PHONY: test host client host-auto client-auto help
 .PHONY: healthcheck-listen healthcheck-ping
@@ -28,14 +32,19 @@ host:
 		--remote $(HOST_REMOTE) \
 		--payload-bytes $(PAYLOAD_BYTES) \
 		--max-payload-bytes $(MAX_PAYLOAD_BYTES) \
-		--frame-interval-ms $(FRAME_INTERVAL_MS)
+		--frame-interval-ms $(FRAME_INTERVAL_MS) \
+		--codec $(CODEC) \
+		--width $(WIDTH) \
+		--height $(HEIGHT) \
+		--bitrate $(BITRATE)
 
 client:
 	cargo run -p client -- \
 		--bind $(CLIENT_BIND) \
 		--remote $(CLIENT_REMOTE) \
 		--max-packet-bytes $(MAX_PACKET_BYTES) \
-		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES)
+		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES) \
+		--codec $(CODEC)
 
 host-auto:
 	cargo run -p host -- \
@@ -43,14 +52,19 @@ host-auto:
 		--remote $(HOST_REMOTE) \
 		--payload-bytes $(PAYLOAD_BYTES) \
 		--max-payload-bytes $(MAX_PAYLOAD_BYTES) \
-		--frame-interval-ms $(FRAME_INTERVAL_MS)
+		--frame-interval-ms $(FRAME_INTERVAL_MS) \
+		--codec $(CODEC) \
+		--width $(WIDTH) \
+		--height $(HEIGHT) \
+		--bitrate $(BITRATE)
 
 client-auto:
 	cargo run -p client -- \
 		--auto-bind-port 5000 \
 		--remote $(CLIENT_REMOTE) \
 		--max-packet-bytes $(MAX_PACKET_BYTES) \
-		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES)
+		--max-in-flight-frames $(MAX_IN_FLIGHT_FRAMES) \
+		--codec $(CODEC)
 
 HC_BIND ?= 0.0.0.0:7000
 HC_REMOTE ?= 192.168.0.2:7000

@@ -1,4 +1,5 @@
 use shared::codec::dummy::PassthroughCodec;
+use shared::codec::types::EncodedFrame;
 use shared::codec::VideoDecoder;
 use shared::core::packet_codec::decode_packet;
 use shared::core::reassembler::{FrameReassembler, ReassemblyError};
@@ -8,7 +9,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
+use shared::codec::macos::h264::VideoToolboxH264Decoder;
+#[cfg(target_os = "macos")]
 use shared::platform::macos::network::detect_preferred_interface;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodecChoice {
+    Passthrough,
+    H264,
+}
 
 #[derive(Debug)]
 struct ClientConfig {
@@ -16,6 +25,7 @@ struct ClientConfig {
     remote_address: SocketAddr,
     max_packet_bytes: usize,
     max_in_flight_frames: usize,
+    codec: CodecChoice,
 }
 
 fn main() {
@@ -41,24 +51,35 @@ fn run_client(config: ClientConfig) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut reassembler = FrameReassembler::new(config.max_in_flight_frames);
     let mut buffer = vec![0_u8; config.max_packet_bytes];
-    let mut decoder = PassthroughCodec::default();
 
     let mut last_report = Instant::now();
     let mut frames_received: u64 = 0;
     let mut packets_received: u64 = 0;
 
-    loop {
-        match receiver.receive(&mut buffer) {
-            Ok(bytes_received) => {
-                packets_received += 1;
-                let packet = match decode_packet(&buffer[..bytes_received]) {
-                    Ok(packet) => packet,
-                    Err(_) => continue,
-                };
+    match config.codec {
+        CodecChoice::Passthrough => {
+            let mut decoder = PassthroughCodec::default();
+            loop {
+                if let Some(frame) = receive_frame(&mut receiver, &mut buffer, &mut reassembler, &mut packets_received) {
+                    let encoded = EncodedFrame {
+                        timestamp: Duration::from_nanos(frame.timestamp_nanos),
+                        data: frame.payload,
+                        is_keyframe: true,
+                    };
+                    let _ = decoder.decode(&encoded);
+                    frames_received += 1;
+                }
 
-                match reassembler.push_packet(packet) {
-                    Ok(Some(frame)) => {
-                        let encoded = shared::codec::types::EncodedFrame {
+                report(&mut last_report, &mut frames_received, &mut packets_received);
+            }
+        }
+        CodecChoice::H264 => {
+            #[cfg(target_os = "macos")]
+            {
+                let mut decoder = VideoToolboxH264Decoder::new()?;
+                loop {
+                    if let Some(frame) = receive_frame(&mut receiver, &mut buffer, &mut reassembler, &mut packets_received) {
+                        let encoded = EncodedFrame {
                             timestamp: Duration::from_nanos(frame.timestamp_nanos),
                             data: frame.payload,
                             is_keyframe: true,
@@ -66,22 +87,47 @@ fn run_client(config: ClientConfig) -> Result<(), Box<dyn std::error::Error>> {
                         let _ = decoder.decode(&encoded);
                         frames_received += 1;
                     }
-                    Ok(None) => {}
-                    Err(ReassemblyError::InvalidChunkIndex) => {}
-                    Err(ReassemblyError::InconsistentChunkCount) => {}
+
+                    report(&mut last_report, &mut frames_received, &mut packets_received);
                 }
             }
-            Err(_) => {}
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err("H.264 codec is only supported on macOS".into());
+            }
         }
+    }
+}
 
-        if last_report.elapsed() >= Duration::from_secs(1) {
-            eprintln!(
-                "frames received: {frames_received}, packets received: {packets_received}"
-            );
-            last_report = Instant::now();
-            frames_received = 0;
-            packets_received = 0;
+fn receive_frame(
+    receiver: &mut UdpTransport,
+    buffer: &mut [u8],
+    reassembler: &mut FrameReassembler,
+    packets_received: &mut u64,
+) -> Option<shared::core::reassembler::ReassembledFrame> {
+    match receiver.receive(buffer) {
+        Ok(bytes_received) => {
+            *packets_received += 1;
+            let packet = decode_packet(&buffer[..bytes_received]).ok()?;
+            match reassembler.push_packet(packet) {
+                Ok(Some(frame)) => Some(frame),
+                Ok(None) => None,
+                Err(ReassemblyError::InvalidChunkIndex) => None,
+                Err(ReassemblyError::InconsistentChunkCount) => None,
+            }
         }
+        Err(_) => None,
+    }
+}
+
+fn report(last_report: &mut Instant, frames_received: &mut u64, packets_received: &mut u64) {
+    if last_report.elapsed() >= Duration::from_secs(1) {
+        eprintln!(
+            "frames received: {frames_received}, packets received: {packets_received}"
+        );
+        *last_report = Instant::now();
+        *frames_received = 0;
+        *packets_received = 0;
     }
 }
 
@@ -91,6 +137,7 @@ fn parse_args() -> Result<ClientConfig, String> {
     let mut max_packet_bytes: usize = 2048;
     let mut max_in_flight_frames: usize = 8;
     let mut auto_bind_port: Option<u16> = None;
+    let mut codec = CodecChoice::Passthrough;
 
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -119,6 +166,10 @@ fn parse_args() -> Result<ClientConfig, String> {
                 let value = args.next().ok_or("missing --auto-bind-port value")?;
                 auto_bind_port = Some(value.parse().map_err(|_| "invalid port")?);
             }
+            "--codec" => {
+                let value = args.next().ok_or("missing --codec value")?;
+                codec = parse_codec(&value)?;
+            }
             "--help" | "-h" => {
                 return Err("".to_string());
             }
@@ -142,7 +193,16 @@ fn parse_args() -> Result<ClientConfig, String> {
         remote_address,
         max_packet_bytes,
         max_in_flight_frames,
+        codec,
     })
+}
+
+fn parse_codec(value: &str) -> Result<CodecChoice, String> {
+    match value {
+        "passthrough" => Ok(CodecChoice::Passthrough),
+        "h264" => Ok(CodecChoice::H264),
+        _ => Err("invalid codec (use passthrough or h264)".to_string()),
+    }
 }
 
 fn auto_bind_socket(port: u16) -> Result<Option<SocketAddr>, String> {
@@ -172,6 +232,6 @@ fn parse_socket_addr(value: &str) -> Result<SocketAddr, String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: client --bind IP:PORT --remote IP:PORT [--max-packet-bytes N] [--max-in-flight-frames N] [--auto-bind-port PORT]"
+        "usage: client --bind IP:PORT --remote IP:PORT [--max-packet-bytes N] [--max-in-flight-frames N] [--auto-bind-port PORT] [--codec passthrough|h264]"
     );
 }

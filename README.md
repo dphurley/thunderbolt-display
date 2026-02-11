@@ -60,6 +60,8 @@ You should see frame/packet counters print once per second on both ends.
 - `make host HOST_REMOTE=<CLIENT_IP>:5000`
 - `make client-auto CLIENT_REMOTE=<HOST_IP>:5001` (auto-pick local interface, prefer Thunderbolt Bridge)
 - `make host-auto HOST_REMOTE=<CLIENT_IP>:5000` (auto-pick local interface, prefer Thunderbolt Bridge)
+- `make host CODEC=h264 WIDTH=320 HEIGHT=180 BITRATE=3000000`
+- `make client CODEC=h264`
 - `make healthcheck-listen HC_BIND=0.0.0.0:7000`
 - `make healthcheck-ping HC_BIND=0.0.0.0:7001 HC_REMOTE=<PEER_IP>:7000`
 
@@ -77,3 +79,11 @@ Run a lightweight UDP ping/pong to confirm reachability before starting the stre
    - `make healthcheck-listen HC_BIND=0.0.0.0:7000`
 2. On the local machine:
    - `make healthcheck-ping HC_BIND=0.0.0.0:7001 HC_REMOTE=<PEER_IP>:7000`
+
+## H.264 e2e test (macOS only)
+1. On the client Mac:
+   - `make client CODEC=h264 CLIENT_REMOTE=<HOST_IP>:5001`
+2. On the host Mac:
+   - `make host CODEC=h264 HOST_REMOTE=<CLIENT_IP>:5000`
+
+Adjust `WIDTH`, `HEIGHT`, and `BITRATE` as needed.

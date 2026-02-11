@@ -10,7 +10,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
+use shared::codec::macos::h264::VideoToolboxH264Encoder;
+#[cfg(target_os = "macos")]
 use shared::platform::macos::network::detect_preferred_interface;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodecChoice {
+    Passthrough,
+    H264,
+}
 
 #[derive(Debug)]
 struct HostConfig {
@@ -19,6 +27,10 @@ struct HostConfig {
     payload_bytes: usize,
     max_payload_bytes: usize,
     frame_interval: Duration,
+    codec: CodecChoice,
+    width: u32,
+    height: u32,
+    bitrate: u32,
 }
 
 fn main() {
@@ -41,7 +53,6 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
     let transport = UdpTransport::bind(config.bind_address)?.connect(config.remote_address)?;
     let mut sender = transport;
 
-    let mut encoder = PassthroughCodec::default();
     let mut packetizer = Packetizer::new(
         PacketizerConfig {
             max_payload_bytes: config.max_payload_bytes,
@@ -53,35 +64,99 @@ fn run_host(config: HostConfig) -> Result<(), Box<dyn std::error::Error>> {
     let mut last_report = Instant::now();
     let mut frames_sent: u64 = 0;
 
-    loop {
-        let timestamp_nanos = current_time_nanos();
-        let raw_frame = RawFrame {
-            width: 1,
-            height: 1,
-            pixel_format: PixelFormat::Rgba8,
-            timestamp: Duration::from_nanos(timestamp_nanos),
-            data: vec![0xAB; config.payload_bytes],
-        };
+    match config.codec {
+        CodecChoice::Passthrough => {
+            let mut encoder = PassthroughCodec::default();
+            loop {
+                let timestamp_nanos = current_time_nanos();
+                let raw_frame = RawFrame {
+                    width: 1,
+                    height: 1,
+                    pixel_format: PixelFormat::Rgba8,
+                    timestamp: Duration::from_nanos(timestamp_nanos),
+                    data: vec![0xAB; config.payload_bytes],
+                };
 
-        let encoded = encoder.encode(&raw_frame)?;
-        let payload = encoded.data;
+                let encoded = encoder.encode(&raw_frame)?;
+                send_encoded(
+                    &mut sender,
+                    &mut packetizer,
+                    frame_identifier,
+                    timestamp_nanos,
+                    &encoded.data,
+                )?;
 
-        let packets = packetizer.packetize(frame_identifier, timestamp_nanos, &payload)?;
-        for packet in packets {
-            let buffer = encode_packet(&packet);
-            sender.send(&buffer)?;
+                frames_sent += 1;
+                frame_identifier = frame_identifier.wrapping_add(1);
+                report(&mut last_report, &mut frames_sent);
+                std::thread::sleep(config.frame_interval);
+            }
         }
+        CodecChoice::H264 => {
+            #[cfg(target_os = "macos")]
+            {
+                let fps = frame_rate_from_interval(config.frame_interval);
+                let mut encoder = VideoToolboxH264Encoder::new(
+                    config.width,
+                    config.height,
+                    config.bitrate,
+                    fps,
+                )?;
 
-        frames_sent += 1;
-        frame_identifier = frame_identifier.wrapping_add(1);
+                let raw_size = (config.width as usize) * (config.height as usize) * 4;
+                loop {
+                    let timestamp_nanos = current_time_nanos();
+                    let raw_frame = RawFrame {
+                        width: config.width,
+                        height: config.height,
+                        pixel_format: PixelFormat::Rgba8,
+                        timestamp: Duration::from_nanos(timestamp_nanos),
+                        data: vec![0x7F; raw_size],
+                    };
 
-        if last_report.elapsed() >= Duration::from_secs(1) {
-            eprintln!("frames sent: {frames_sent}");
-            last_report = Instant::now();
-            frames_sent = 0;
+                    let encoded = encoder.encode(&raw_frame)?;
+                    send_encoded(
+                        &mut sender,
+                        &mut packetizer,
+                        frame_identifier,
+                        timestamp_nanos,
+                        &encoded.data,
+                    )?;
+
+                    frames_sent += 1;
+                    frame_identifier = frame_identifier.wrapping_add(1);
+                    report(&mut last_report, &mut frames_sent);
+                    std::thread::sleep(config.frame_interval);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err("H.264 codec is only supported on macOS".into());
+            }
         }
+    }
+}
 
-        std::thread::sleep(config.frame_interval);
+fn send_encoded(
+    sender: &mut UdpTransport,
+    packetizer: &mut Packetizer,
+    frame_identifier: u32,
+    timestamp_nanos: u64,
+    payload: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let packets = packetizer.packetize(frame_identifier, timestamp_nanos, payload)?;
+    for packet in packets {
+        let buffer = encode_packet(&packet);
+        sender.send(&buffer)?;
+    }
+    Ok(())
+}
+
+fn report(last_report: &mut Instant, frames_sent: &mut u64) {
+    if last_report.elapsed() >= Duration::from_secs(1) {
+        eprintln!("frames sent: {frames_sent}");
+        *last_report = Instant::now();
+        *frames_sent = 0;
     }
 }
 
@@ -93,6 +168,11 @@ fn current_time_nanos() -> u64 {
     duration.as_nanos() as u64
 }
 
+fn frame_rate_from_interval(interval: Duration) -> u32 {
+    let millis = interval.as_millis().max(1) as u32;
+    1000 / millis
+}
+
 fn parse_args() -> Result<HostConfig, String> {
     let mut bind_address: Option<SocketAddr> = None;
     let mut remote_address: Option<SocketAddr> = None;
@@ -100,6 +180,10 @@ fn parse_args() -> Result<HostConfig, String> {
     let mut max_payload_bytes: usize = 1200;
     let mut frame_interval = Duration::from_millis(16);
     let mut auto_bind_port: Option<u16> = None;
+    let mut codec = CodecChoice::Passthrough;
+    let mut width: u32 = 320;
+    let mut height: u32 = 180;
+    let mut bitrate: u32 = 3_000_000;
 
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -131,6 +215,22 @@ fn parse_args() -> Result<HostConfig, String> {
                 let value = args.next().ok_or("missing --auto-bind-port value")?;
                 auto_bind_port = Some(value.parse().map_err(|_| "invalid port")?);
             }
+            "--codec" => {
+                let value = args.next().ok_or("missing --codec value")?;
+                codec = parse_codec(&value)?;
+            }
+            "--width" => {
+                let value = args.next().ok_or("missing --width value")?;
+                width = value.parse().map_err(|_| "invalid width")?;
+            }
+            "--height" => {
+                let value = args.next().ok_or("missing --height value")?;
+                height = value.parse().map_err(|_| "invalid height")?;
+            }
+            "--bitrate" => {
+                let value = args.next().ok_or("missing --bitrate value")?;
+                bitrate = value.parse().map_err(|_| "invalid bitrate")?;
+            }
             "--help" | "-h" => {
                 return Err("".to_string());
             }
@@ -155,7 +255,19 @@ fn parse_args() -> Result<HostConfig, String> {
         payload_bytes,
         max_payload_bytes,
         frame_interval,
+        codec,
+        width,
+        height,
+        bitrate,
     })
+}
+
+fn parse_codec(value: &str) -> Result<CodecChoice, String> {
+    match value {
+        "passthrough" => Ok(CodecChoice::Passthrough),
+        "h264" => Ok(CodecChoice::H264),
+        _ => Err("invalid codec (use passthrough or h264)".to_string()),
+    }
 }
 
 fn auto_bind_socket(port: u16) -> Result<Option<SocketAddr>, String> {
@@ -185,6 +297,6 @@ fn parse_socket_addr(value: &str) -> Result<SocketAddr, String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: host --bind IP:PORT --remote IP:PORT [--payload-bytes N] [--max-payload-bytes N] [--frame-interval-ms N] [--auto-bind-port PORT]"
+        "usage: host --bind IP:PORT --remote IP:PORT [--payload-bytes N] [--max-payload-bytes N] [--frame-interval-ms N] [--auto-bind-port PORT] [--codec passthrough|h264] [--width N --height N --bitrate N]"
     );
 }

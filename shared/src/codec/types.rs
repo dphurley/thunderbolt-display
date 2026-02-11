@@ -3,6 +3,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
     Rgba8,
+    Bgra8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
